@@ -7,8 +7,7 @@
 
 package frc.robot;
 import frc.robot.Gamepad;
-import frc.commands.lift.*;
-import frc.subsystems.Elevator;
+
 
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.cscore.VideoSource;
@@ -47,15 +46,10 @@ public class Robot extends TimedRobot {
 // essential instatiation
   public static Compressor compressor;
   public static DoubleSolenoid hatchGrabberSolenoid;
-  public static DoubleSolenoid hatchGrabberDeploySolenoid;
+  public static DoubleSolenoid hatchGrabberDeploySolenoids;
   public static PowerDistributionPanel pdp;
 //
 
-// encoder instantiation 3/2/19
-private static final int kEncoderPortA = 0;
-private static final int kEncoderPortB = 1;
-private Encoder m_encoder;
-// --end
 
 // smartdashboard auto choices dropdown
   private String m_autoSelected;
@@ -67,13 +61,15 @@ private Encoder m_encoder;
 private static final SPI.Port kGyroPort = SPI.Port.kOnboardCS0;
 private static final int leftVictorPort= 0;
 private static final int rightVictorPort = 1;
-private static final int kJoystickPort = 0;
-private static final int kJoystick2Port = 1;
 private static final int kElevatorPort = 2;
-private static final int kCargoIntakePort = 3;
-private static final int kHabClimbPort = 4;
+private static final int kCargoIntakePortLeft = 3;
+private static final int kCargoIntakePortRight = 4;
+private static final int kHabClimbPort = 5;
 // --end
 
+//joystick ports
+private static final int kJoystickPort = 0;
+private static final int kJoystick2Port = 1;
 
 // new gyro instantiation 
 int P, I, D = 1;
@@ -81,12 +77,6 @@ private static final double kP = 0.005; // propotional turning constant
 double angle;
 boolean turned = true;
 int mustTurnDegree = 0;
-// --end
-
-
-//int integral, previous_error, setpoint = 0;
-  int integral, previous_error = 0;
-  int setpoint = 20; //attempting to set the setpoint as a different number to see if it turns to that angle or not
 // --end
 
 
@@ -98,20 +88,16 @@ int mustTurnDegree = 0;
 
 //auxillary sparks
 Spark elevatorSpark = new Spark(kElevatorPort); //single - one controller
-Jaguar cargoIntakeSPX = new Jaguar(kCargoIntakePort); //double - two controllers - one signal
-//VictorSPX habClimbJaguar = new VictorSPX(kHabClimbPort); //double - two controllers - one signal
+Jaguar cargoIntakeJaguarLeft = new Jaguar(kCargoIntakePortLeft); //single - one controller
+Jaguar cargoIntakeJaguarRight = new Jaguar(kCargoIntakePortRight); //single - one controller
 // --end
 
 
 //hall effect
 DigitalInput hallEffectSensorTop = new DigitalInput(0); //top sensor init
 DigitalInput hallEffectSensorBottom = new DigitalInput(1); //bottom sensor init
-DigitalInput topPreLimit = new DigitalInput(2); //top prelimit
-DigitalInput bottomPreLimit = new DigitalInput(3); //bottom prelimit
-DigitalInput rocketLowLevel = new DigitalInput(4); //rocket low level sensor init
-DigitalInput rocketMiddleLevel = new DigitalInput(5); //rocket middle level sensor init
-DigitalInput rocketHighLevel = new DigitalInput(6); //rocket high level sensor init
-DigitalInput cargoShipLevel = new DigitalInput(7); //cargo ship level sensor init
+DigitalInput lineFollowerLeft = new DigitalInput(2); //left line follower
+DigitalInput lineFollowerMiddle = new DigitalInput(3); //middle line follower
 // --end
 
 
@@ -119,21 +105,20 @@ DigitalInput cargoShipLevel = new DigitalInput(7); //cargo ship level sensor ini
 DifferentialDrive m_myRobot = new DifferentialDrive(leftVictorSP, rightVictorSP);
 	private ADXRS450_Gyro m_gyro = new ADXRS450_Gyro(kGyroPort);
   private Joystick m_joystick = new Joystick(kJoystickPort);
+  private Joystick m_joystick2 = new Joystick(kJoystick2Port);
 // --end
 
 
-//second joystick instantiation
-private Joystick m_joystick2 = new Joystick(kJoystick2Port);
-// --end
+public static Encoder m_encoder;
 
 
   @Override
-  public void robotInit() {
+  public void robotInit() { 
   compressor = new Compressor(1);
   hatchGrabberSolenoid = new DoubleSolenoid(4, 5);
-  hatchGrabberDeploySolenoid = new DoubleSolenoid(6, 7);
+  hatchGrabberDeploySolenoids = new DoubleSolenoid(6, 7);
   m_joystick2 = new Joystick(1);
-  m_encoder = new Encoder(kEncoderPortA, kEncoderPortB);
+  m_encoder = new Encoder(6, 7);
   m_encoder.setDistancePerPulse((Math.PI * 1.8) / 360.0);
 
   // smartdashboard option adding  
@@ -153,6 +138,9 @@ private Joystick m_joystick2 = new Joystick(kJoystick2Port);
   CameraServer camera = CameraServer.getInstance();
   VideoSource usbCam = camera.startAutomaticCapture("cam0", 0);
   usbCam.setVideoMode(PixelFormat.kMJPEG, 640, 480, 30);
+  CameraServer camera2 = CameraServer.getInstance();
+  VideoSource usbCam2 = camera2.startAutomaticCapture("cam1", 1);
+  usbCam2.setVideoMode(PixelFormat.kMJPEG, 640, 480, 30);
   // --end
   }
 
@@ -167,9 +155,6 @@ private Joystick m_joystick2 = new Joystick(kJoystick2Port);
    */
   @Override
   public void robotPeriodic() {
-  // unsure whether functioning but supposed to put angle of gyro in smartdashboard
-    SmartDashboard.putNumber("Gyro Angle", m_gyro.getAngle());
-  // --end
 }
 
   /**
@@ -198,29 +183,10 @@ private Joystick m_joystick2 = new Joystick(kJoystick2Port);
     switch (m_autoSelected) {
       case kAutoLine:
       default:
-      /* NEW gyro angle setpoint testing (not working as of 2/2/19, doesnt move anywhere)
-      m_myRobot.setSafetyEnabled(false);
-      double error = setpoint - m_gyro.getAngle(); // Error = Target - Actual
-      angle = m_gyro.getAngle() % 360;
-      if(angle-20 > 0)m_myRobot.arcadeDrive(0.8, (angle - error)*kP);
-      else if(angle+20 < 0)m_myRobot.arcadeDrive(0.8, (angle + error)*kP);
-     // else m_myRobot.arcadeDrive(m_joystick.getY(), m_joystick.getX());    
-      //m_myRobot.arcadeDrive(0, 0);
-      --end */
+      //code goes here
       break;
       case kAutoLineRight:
       //code goes here
-            //DO NOT USE UNTIL FIXED -- DRIVES FORWARDS AT FULL SPEED INFINITELY -- USE ONLY ON ROBOT CART AND BE EXTRA CAUTIOUS
-            //I commented out this code to make sure that it can't be selected accidently. - Kyle 2/28/19
-            /*
-            double error2 = setpoint - m_gyro.getAngle(); // Error = Target - Actual
-            this.integral += (error2*.02); // Integral is increased by the error*time (which is .02 seconds using normal IterativeRobot)
-            double derivative = (error2 - this.previous_error) / .02;
-            double finalangle = P * error2 + I * this.integral + D * derivative;
-            m_myRobot.arcadeDrive(0, finalangle);
-
-            */
-
         break;
       case kAutoLineLeft:
       //code goes here  
@@ -246,27 +212,24 @@ private Joystick m_joystick2 = new Joystick(kJoystick2Port);
     compressor.clearAllPCMStickyFaults();
   // --end  
 
+
   boolean upTriggered = hallEffectSensorTop.get() == false;
   boolean downTriggered = hallEffectSensorBottom.get() == false;
-
-/* commented out on 2/28/19 for button elevator with prelimit stops
-  //hall effect for elevator (tested & working as of 1/26/19)
 	  double joystickYAxis = m_joystick2.getY();    
    
     if (joystickYAxis > 0 && upTriggered || joystickYAxis < 0 && downTriggered)
       {
-        elevatorSpark.set(0); 
-        
+        elevatorSpark.set(0);
       }
     else
       {
       	elevatorSpark.set(m_joystick2.getY());
       }
     // --end
-*/
+
 
 //Pneumatics (tested & working as of 2/2/19)
-//compressor.setClosedLoopControl(false);
+
 
 //if-else piston control statement (tested & working as of 2/2/19)
   if (m_joystick2.getRawButton(4)) {
@@ -282,42 +245,42 @@ private Joystick m_joystick2 = new Joystick(kJoystick2Port);
   }
 // --end
 
+//cargo intake if-else control
+if (m_joystick2.getRawButton(1)) {
+  cargoIntakeJaguarLeft.set(0.5);
+  cargoIntakeJaguarRight.set(-0.5);
+} 
+else{  
+}	
+
+if (m_joystick2.getRawButton(2)) {
+  cargoIntakeJaguarLeft.set(0.5);
+  cargoIntakeJaguarRight.set(-0.5);
+}
+else{
+}
+// --end
+
 
 //hatch grabber deploy outside of frame perimeter (written on 2/9/19, working as of N/A)
   if (m_joystick2.getRawButton(9)) {
-    hatchGrabberDeploySolenoid.set(DoubleSolenoid.Value.kForward);
+    hatchGrabberDeploySolenoids.set(DoubleSolenoid.Value.kForward);
     System.out.println("Hatch Grabber Deployed");
   } 
   else{  
   }	
   
   if (m_joystick2.getRawButton(10)) {
-    hatchGrabberDeploySolenoid.set(DoubleSolenoid.Value.kReverse);
+    hatchGrabberDeploySolenoids.set(DoubleSolenoid.Value.kReverse);
     System.out.println("Hatch Grabber NOT Deployed");
   }
   else{
   }
 // --end
 
-
-// pressure switch boolean's (tested & working as of 1/26/19)
-boolean pressureSwitchOn = compressor.getPressureSwitchValue() == true;
-boolean pressureSwitchOff = compressor.getPressureSwitchValue() == false;
-// --end
-
-/*
-// compressor pressure regulation (tested & working as of 1/26/19)
-  if(pressureSwitchOff) {
-    compressor.enabled();
-  }
-  else if (pressureSwitchOn) {
-    compressor.setClosedLoopControl(true);
-  }
-// --end
-*/
-
 //NEW (and working 100%) Gyro Math (tested & working as of 2/9/19)
-m_myRobot.arcadeDrive(m_joystick.getY()*0.8, m_joystick.getX()*0.8);
+//added - into .getY() (reversed joystick Y axis quick fix 3/9/19 )
+m_myRobot.arcadeDrive(m_joystick.getY()*-0.8, m_joystick.getX()*0.8);
 
 if(m_joystick.getRawButton(1))turned = true;
 if(m_joystick.getPOV() != -1){
@@ -327,107 +290,23 @@ if(m_joystick.getPOV() != -1){
 if(!turned)turnDegrees(mustTurnDegree);
 // --end
 
+SmartDashboard.putNumber("encoder val", m_encoder.getRaw());
+SmartDashboard.putNumber("encoder", m_encoder.get());
 
-//Basic Auxillary Functions (X for in and A for out) (written on 2/9/19, working as of N/A)
-/* commented out 2/19/19 for SPX .set command not working correctly
-if (m_joystick.getRawButton(1)) {
- cargoIntakeSPX.set(ControlMode PercentageOutput, 0.5, 0.5);  
+//encoder tests
+if (m_joystick2.getRawButton(5)) {
+  m_encoder.reset();
 }
-else if (m_joystick.getRawButton(2)){
-  cargoIntakeSPX.set(-0.5);
-}
-*/
-
-//Elevator Hall Levels (Right Side Bumper and Trigger for Up and Down) (written on 2/9/19, working as of N/A)
-boolean lowTriggered = rocketLowLevel.get() == false;
-boolean middleTriggered = rocketMiddleLevel.get() == false;
-boolean highTriggered = rocketHighLevel.get() == false;
-boolean cargoShipTriggered = cargoShipLevel.get() == false;
-// --end 
-
-/* 2/19/19
-//Buttons to control elevator (written on 2/9/19, working as of N/A)}
-if (m_joystick2.getRawButton(6)) {
-  elevatorSpark.set(0.5);
-}
-else if(m_joystick2.getRawButton(8)){
-  elevatorSpark.set(-0.5);
+else if (!m_joystick2.getRawButton(5)){
 }
 
-if (m_joystick2.getRawButton(6) && upTriggered || m_joystick2.getRawButton(8) && downTriggered)
-{
-  elevatorSpark.set(0);
-}
-// --end
-*/
-/* 2/19/19
-//Rocket and Cargo Ship level stops (written on 2/9/19, working as of N/A)
-if (m_joystick2.getRawButton(8) || m_joystick.getRawButton(6)) {}
-else if (m_joystick2.getRawButton(8) &&lowTriggered){ //req for cargo level
-e levatorSpark.set(0);
-}
-else if (m_joystick2.getRawButton(8) &&middleTriggered){
-elevatorSpark.set(0);
-}
-else if (m_joystick2.getRawButton(8) &&highTriggered){
-elevatorSpark.set(0);
-}
-else if (m_joystick2.getRawButton(8) &&cargoShipTriggered){
-elevatorSpark.set(0);
-}  
-else if (m_joystick2.getRawButton(6) &&lowTriggered){ //req for cargo level
-elevatorSpark.set(0);
-}
-else if (m_joystick2.getRawButton(6) &&middleTriggered){
-elevatorSpark.set(0);
-}
-else if (m_joystick2.getRawButton(6) &&highTriggered){
-elevatorSpark.set(0);
-}
-else if (m_joystick2.getRawButton(6) &&cargoShipTriggered){
-elevatorSpark.set(0);
-} */ 
+//else if (m_encoder.get ()>19  || m_encoder.get()<21){
+//  elevatorSpark.set(0);
+//}
+
 // --end
 
-
-boolean topPreLimitTriggered = topPreLimit.get() == false;
-boolean bottomPreLimitTriggered = bottomPreLimit.get() == false;
-boolean button8NotPressed = !m_joystick2.getRawButton(8);
-boolean button6NotPressed = !m_joystick2.getRawButton(6);
-
-double definedSpeedDown = 0.5;
-double definedSpeedUp = -0.5;
-
-
-if (m_joystick2.getRawButton(6)) {
-  elevatorSpark.set(definedSpeedUp);
 }
-else if (m_joystick2.getRawButton(8)) {
-  elevatorSpark.set(definedSpeedDown);
-}
-else if (button6NotPressed || button8NotPressed){
-  elevatorSpark.set(0);
-}
-else if (m_joystick2.getRawButton(6) && topPreLimitTriggered) {
-definedSpeedUp = 0.2;
-}
-else if (m_joystick2.getRawButton(8) && bottomPreLimitTriggered) {
-definedSpeedDown = -0.2;
-}
-else if (m_joystick.getRawButton(6) && upTriggered) {
-elevatorSpark.set(0);
-}
-else if (m_joystick2.getRawButton(8) && downTriggered) {
-elevatorSpark.set(0);
-}
-else if (m_joystick2.getRawButton(6) && bottomPreLimitTriggered) {
-definedSpeedDown = -0.5;
-}
-else if (m_joystick2.getRawButton(8) && topPreLimitTriggered) {
-definedSpeedUp = 0.5;
-}
-}
-
 /**
    * This function is called periodically during test mode.
    */  

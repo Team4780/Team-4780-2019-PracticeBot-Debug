@@ -10,9 +10,9 @@ import edu.wpi.first.wpilibj.command.PIDSubsystem;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 
 public class Elevator extends PIDSubsystem {
-    
+    public static Encoder liftEncoder;
 	public Spark elevatorSpark = new Spark(2);
- 	public Encoder liftEncoder = Encoder(0, 1, true, EncodingType.k4X);
+ 	//public static Encoder liftEncoder = Encoder(0, 1, 2, EncodingType.k4X);
     public DigitalInput top = new DigitalInput(0);
     public DigitalInput bottom = new DigitalInput(1);
     
@@ -60,8 +60,8 @@ public class Elevator extends PIDSubsystem {
     }
  
     public void initDefaultCommand() {
-    	setDefaultCommand(new ElevateWithTriggers());
-    	liftEncoder.setPIDSourceParameter(PIDSourceParameter.kDistance);
+   // 	setDefaultCommand(new ElevateWithTriggers());
+   // 	liftEncoder.setPIDSourceParameter(PIDSourceParameter.kDistance);
     }
     
     public void switchOverride () {
@@ -91,7 +91,7 @@ public class Elevator extends PIDSubsystem {
 	    	elevatorSpark.set(input);
 			return;
 	    } else if (bottom.get() == true && input < 0) {
-	    	Robot.elevator.getLiftEncoder().reset();  
+	//    	Robot.elevator.getLiftEncoder().reset();  
 			stop();
 			return;
 		} else {
@@ -121,7 +121,7 @@ public class Elevator extends PIDSubsystem {
     protected void usePIDOutput(double output) {
         // Prevents lift from smacking the floor.
     	if (bottom.get() == true && output < 0) {
-    		Robot.elevator.getLiftEncoder().reset();        	
+    //		Robot.elevator.getLiftEncoder().reset();        	
     		stop();
     		return;
         } else {
